@@ -22,6 +22,9 @@
     --font-body:'Noto Sans','Noto Sans Oriya','Noto Sans Devanagari',sans-serif;
   }
   *{box-sizing:border-box;}
+  html{
+    overscroll-behavior-y: contain;
+  }
   body{
     margin:0;
     background:var(--bg);
@@ -29,6 +32,8 @@
     font-family:var(--font-body);
     -webkit-font-smoothing:antialiased;
     padding-bottom:84px;
+    overscroll-behavior-y: contain;
+    min-height:100vh;
   }
   h1,h2,h3,.brand{font-family:var(--font-head);}
   header{
