@@ -39,6 +39,21 @@
   }
   html{ overscroll-behavior-y:contain; }
   body{ overscroll-behavior-y:contain; }
+  #rationCard{
+    position:relative;
+    background-size:cover;
+    background-position:center;
+    transition:background-image 0.6s ease-in-out;
+    overflow:hidden;
+  }
+  #rationCard::before{
+    content:'';
+    position:absolute; inset:0;
+    background:rgba(255,253,246,0.80);
+    z-index:0;
+    border-radius:14px;
+  }
+  #rationCard > *{ position:relative; z-index:1; }
   header, main, nav.tabbar{ position:relative; z-index:1; }
   h1,h2,h3,.brand{font-family:var(--font-head);}
   header{
@@ -206,7 +221,7 @@
 
   <!-- RATION TAB -->
   <section id="tab-ration" class="tab-panel active">
-    <div class="card">
+    <div class="card" id="rationCard">
       <div class="section-title" id="rationTitle"></div>
       <div id="rationList"></div>
       <form class="inline" id="rationForm" style="margin-top:10px;">
@@ -750,6 +765,19 @@ applyLanguage();
 setupMonthFilters();
 bindMonthFilters();
 loadAndRender();
+
+// Alternate two background photos inside the Ration card every 5 seconds
+const rationCardImages = ['chef1.jpg','chef2.jpg'];
+let rationCardImgIndex = 0;
+function setRationCardBg(){
+  const el = document.getElementById('rationCard');
+  if(el) el.style.backgroundImage = `url('${rationCardImages[rationCardImgIndex]}')`;
+}
+setRationCardBg();
+setInterval(()=>{
+  rationCardImgIndex = (rationCardImgIndex + 1) % rationCardImages.length;
+  setRationCardBg();
+}, 5000);
 </script>
 </body>
 </html>
