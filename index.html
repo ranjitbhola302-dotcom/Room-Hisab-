@@ -34,9 +34,11 @@
   body::before{
     content:'';
     position:fixed; inset:0;
-    background:rgba(250,243,226,0.82);
+    background:rgba(250,243,226,0.55);
     z-index:0;
   }
+  html{ overscroll-behavior-y:contain; }
+  body{ overscroll-behavior-y:contain; }
   header, main, nav.tabbar{ position:relative; z-index:1; }
   h1,h2,h3,.brand{font-family:var(--font-head);}
   header{
@@ -189,10 +191,13 @@
       <div class="sub" id="subText"></div>
       <div class="sync-status" id="syncStatus"></div>
     </div>
-    <div class="lang-switch" id="langSwitch">
-      <button data-lang="hi">हिं</button>
-      <button data-lang="en">EN</button>
-      <button data-lang="or">ଓଡ଼ି</button>
+    <div>
+      <div class="lang-switch" id="langSwitch">
+        <button data-lang="hi">हिं</button>
+        <button data-lang="en">EN</button>
+        <button data-lang="or">ଓଡ଼ି</button>
+      </div>
+      <button id="headerRefreshBtn" style="margin-top:6px; width:100%; background:none; border:1.5px solid var(--line); color:var(--ink-soft); font-size:12px; font-weight:700; padding:5px 9px; border-radius:999px; cursor:pointer; font-family:var(--font-body);">🔄 Refresh</button>
     </div>
   </div>
 </header>
@@ -677,6 +682,7 @@ document.getElementById('resetBtn').addEventListener('click', async ()=>{
   await withLatest(d => { d.members = []; d.ration = []; d.expenses = []; d.rent = []; });
 });
 document.getElementById('refreshBtn').addEventListener('click', loadAndRender);
+document.getElementById('headerRefreshBtn').addEventListener('click', loadAndRender);
 
 // Auto-refresh from the shared bin periodically, and when the tab regains focus
 // Automatic sync/refresh disabled. Use Save / Sync manually.
