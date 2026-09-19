@@ -217,7 +217,7 @@
 <header>
   <div class="header-top">
     <div>
-      <div class="brand">🏠 <span id="brandText">Room Hisab</span></div>
+      <div class="brand" id="brandTapZone">🏠 <span id="brandText">Room Hisab</span></div>
       <div class="sub" id="subText"></div>
       <div class="sync-status" id="syncStatus"></div>
     </div>
@@ -304,6 +304,17 @@
     <div class="card">
       <button class="muted-link" id="refreshBtn"></button> ·
       <button class="muted-link" id="resetBtn"></button>
+      <div id="resetPanel" style="display:none; margin-top:10px;">
+        <div style="display:flex; gap:8px; margin-bottom:10px;">
+          <select id="resetYear"></select>
+          <select id="resetMonth"></select>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn" id="resetMonthBtn" style="background:var(--spice);"></button>
+          <button class="btn" id="resetYearBtn" style="background:var(--spice);"></button>
+          <button class="muted-link" id="resetCancelBtn"></button>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -333,7 +344,22 @@
     </div>
   </section>
 
+  <!-- ADMIN TAB (hidden unless unlocked on this device) -->
+  <section id="tab-admin" class="tab-panel">
+    <div class="card">
+      <div class="section-title">⚙️ Devices</div>
+      <div id="adminDeviceList"></div>
+    </div>
+  </section>
+
 </main>
+
+<div id="blockScreen" style="display:none; position:fixed; inset:0; z-index:999; background:var(--bg); align-items:center; justify-content:center; text-align:center; padding:30px;">
+  <div>
+    <div style="font-size:40px; margin-bottom:10px;">⛔</div>
+    <div style="font-weight:700; font-size:18px;">Access blocked</div>
+  </div>
+</div>
 
 <button class="btn" id="saveAllBtn" style="position:fixed; bottom:72px; left:16px; right:16px; width:calc(100% - 32px); z-index:9;">💾 Save / Sync</button>
 
@@ -343,6 +369,7 @@
   <button class="tab-btn" data-tab="hisab"><span class="ic">🤝</span><span id="navHisab"></span></button>
   <button class="tab-btn" data-tab="rent"><span class="ic">🏠</span><span>Rent</span></button>
   <button class="tab-btn" data-tab="main"><span class="ic">📚</span><span>Main Data</span></button>
+  <button class="tab-btn" data-tab="admin" id="navAdminBtn" style="display:none;"><span class="ic">⚙️</span><span>Admin</span></button>
 </nav>
 
 <script>
@@ -363,7 +390,11 @@ const STR = {
     balanceTitle:'कौन कितना दे / ले', balanceEmpty:'हिसाब के लिए कम से कम 2 मेंबर जोड़ें',
     willGet:'लेना है', willGive:'देना है',
     settleTitle:'सेटलमेंट सुझाव', settleAllClear:'सबका हिसाब बराबर है 🎉',
-    resetBtn:'⚠️ सारा डेटा रीसेट करें', resetConfirm:'क्या आप वाकई सारा डेटा (राशन, खर्चा, मेंबर्स) डिलीट करना चाहते हैं?',
+    resetBtn:'⚠️ डेटा रीसेट करें', resetConfirm:'क्या आप वाकई सारा डेटा (राशन, खर्चा, मेंबर्स) डिलीट करना चाहते हैं?',
+    resetMonthBtn:'सिर्फ ये महीना डिलीट करें', resetYearBtn:'पूरा साल डिलीट करें', resetCancel:'रद्द करें',
+    resetMonthConfirm:'इस महीने का सारा खर्चा और किराया डिलीट हो जाएगा। पक्का करें?',
+    resetYearConfirm:'इस पूरे साल का सारा खर्चा और किराया डिलीट हो जाएगा। पक्का करें?',
+    resetPasswordPrompt:'Password डालें:', resetPasswordWrong:'गलत password!',
     refreshBtn:'🔄 अभी sync करें',
     syncing:'sync हो रहा है...', synced:'✅ सिंक हो गया', syncError:'⚠️ इंटरनेट जांचें, sync नहीं हुआ',
     locale:'hi-IN'
@@ -382,7 +413,11 @@ const STR = {
     balanceTitle:'Who owes / gets', balanceEmpty:'Add at least 2 members to see balances',
     willGet:'to receive', willGive:'to pay',
     settleTitle:'Settle-up suggestions', settleAllClear:'Everyone is settled up 🎉',
-    resetBtn:'⚠️ Reset all data', resetConfirm:'Are you sure you want to delete all data (ration, expenses, members)?',
+    resetBtn:'⚠️ Reset data', resetConfirm:'Are you sure you want to delete all data (ration, expenses, members)?',
+    resetMonthBtn:'Delete this month only', resetYearBtn:'Delete entire year', resetCancel:'Cancel',
+    resetMonthConfirm:'All expenses and rent for this month will be deleted. Are you sure?',
+    resetYearConfirm:'All expenses and rent for this entire year will be deleted. Are you sure?',
+    resetPasswordPrompt:'Enter password:', resetPasswordWrong:'Wrong password!',
     refreshBtn:'🔄 Sync now',
     syncing:'Syncing...', synced:'✅ Synced', syncError:'⚠️ Check internet, sync failed',
     locale:'en-IN'
@@ -401,7 +436,11 @@ const STR = {
     balanceTitle:'କିଏ କେତେ ଦେବ / ପାଇବ', balanceEmpty:'ହିସାବ ପାଇଁ ଅତିକମରେ ୨ ଜଣ ସଦସ୍ୟ ଯୋଡ଼ନ୍ତୁ',
     willGet:'ପାଇବେ', willGive:'ଦେବେ',
     settleTitle:'ସେଟଲମେଣ୍ଟ ପରାମର୍ଶ', settleAllClear:'ସମସ୍ତଙ୍କ ହିସାବ ସମାନ ଅଛି 🎉',
-    resetBtn:'⚠️ ସମସ୍ତ ତଥ୍ୟ ରିସେଟ୍ କରନ୍ତୁ', resetConfirm:'ଆପଣ ପ୍ରକୃତରେ ସମସ୍ତ ତଥ୍ୟ (ରାସନ, ଖର୍ଚ୍ଚ, ସଦସ୍ୟ) ଡିଲିଟ୍ କରିବାକୁ ଚାହାଁନ୍ତି କି?',
+    resetBtn:'⚠️ ତଥ୍ୟ ରିସେଟ୍ କରନ୍ତୁ', resetConfirm:'ଆପଣ ପ୍ରକୃତରେ ସମସ୍ତ ତଥ୍ୟ (ରାସନ, ଖର୍ଚ୍ଚ, ସଦସ୍ୟ) ଡିଲିଟ୍ କରିବାକୁ ଚାହାଁନ୍ତି କି?',
+    resetMonthBtn:'ଶୁଧୁ ଏହି ମାସ ଡିଲିଟ୍ କରନ୍ତୁ', resetYearBtn:'ପୂରା ବର୍ଷ ଡିଲିଟ୍ କରନ୍ତୁ', resetCancel:'ବାତିଲ୍ କରନ୍ତୁ',
+    resetMonthConfirm:'ଏହି ମାସର ସମସ୍ତ ଖର୍ଚ୍ଚ ଓ ଭଡ଼ା ଡିଲିଟ୍ ହୋଇଯିବ। ନିଶ୍ଚିତ କି?',
+    resetYearConfirm:'ଏହି ପୂରା ବର୍ଷର ସମସ୍ତ ଖର୍ଚ୍ଚ ଓ ଭଡ଼ା ଡିଲିଟ୍ ହୋଇଯିବ। ନିଶ୍ଚିତ କି?',
+    resetPasswordPrompt:'Password ଲେଖନ୍ତୁ:', resetPasswordWrong:'ଭୁଲ୍ password!',
     refreshBtn:'🔄 ଏବେ sync କରନ୍ତୁ',
     syncing:'sync ହେଉଛି...', synced:'✅ sync ହୋଇଗଲା', syncError:'⚠️ ଇଣ୍ଟରନେଟ୍ ଯାଞ୍ଚ କରନ୍ତୁ, sync ହେଲା ନାହିଁ',
     locale:'or-IN'
@@ -409,7 +448,7 @@ const STR = {
 };
 
 let lang = localStorage.getItem('lang-pref') || 'hi';
-let data = { members: [], ration: [], expenses: [], rent: [] };
+let data = { members: [], ration: [], expenses: [], rent: [], devices: {}, blockedDevices: {} };
 let busy = false;
 let selectedYear = new Date().getFullYear();
 let selectedMonth = new Date().getMonth();
@@ -418,6 +457,12 @@ let dirty = false;
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 function T(){ return STR[lang]; }
 function setSyncStatus(msg){ document.getElementById('syncStatus').textContent = msg; }
+
+function getDeviceId(){
+  let id = localStorage.getItem('device-id');
+  if(!id){ id = 'dev_' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); localStorage.setItem('device-id', id); }
+  return id;
+}
 
 async function fetchRemote(){
   const res = await fetch(DB_URL, { cache:'no-store' });
@@ -428,7 +473,9 @@ async function fetchRemote(){
     members: Array.isArray(safe.members) ? safe.members : [],
     ration: Array.isArray(safe.ration) ? safe.ration : [],
     expenses: Array.isArray(safe.expenses) ? safe.expenses : [],
-    rent: Array.isArray(safe.rent) ? safe.rent : []
+    rent: Array.isArray(safe.rent) ? safe.rent : [],
+    devices: safe.devices && typeof safe.devices === 'object' ? safe.devices : {},
+    blockedDevices: safe.blockedDevices && typeof safe.blockedDevices === 'object' ? safe.blockedDevices : {}
   };
 }
 async function pushRemote(newData){
@@ -439,6 +486,7 @@ async function pushRemote(newData){
   });
   if(!res.ok) throw new Error('push failed');
 }
+
 
 // Fetch latest, apply a change, push back, then update local view
 async function withLatest(mutator){
@@ -457,8 +505,28 @@ async function loadAndRender(){
   }catch(e){
     setSyncStatus(T().syncError);
   }
+  checkBlockedAndRegisterDevice();
   setupMonthFilters();
   renderAll();
+}
+
+function checkBlockedAndRegisterDevice(){
+  const id = getDeviceId();
+  if(data.blockedDevices && data.blockedDevices[id]){
+    document.getElementById('blockScreen').style.display = 'flex';
+    return;
+  }
+  document.getElementById('blockScreen').style.display = 'none';
+  if(!data.devices) data.devices = {};
+  if(!data.devices[id]){
+    data.devices[id] = { firstSeen: Date.now() };
+    withLatest(d => { if(!d.devices) d.devices = {}; d.devices[id] = { firstSeen: Date.now() }; });
+  } else {
+    data.devices[id].lastSeen = Date.now();
+  }
+  if(localStorage.getItem('is-admin') === 'true'){
+    document.getElementById('navAdminBtn').style.display = 'flex';
+  }
 }
 
 function renderAll(){
@@ -492,6 +560,9 @@ function applyLanguage(){
   document.getElementById('balanceTitle').textContent = t.balanceTitle;
   document.getElementById('settleTitle').textContent = t.settleTitle;
   document.getElementById('resetBtn').textContent = t.resetBtn;
+  document.getElementById('resetMonthBtn').textContent = t.resetMonthBtn;
+  document.getElementById('resetYearBtn').textContent = t.resetYearBtn;
+  document.getElementById('resetCancelBtn').textContent = t.resetCancel;
   document.getElementById('refreshBtn').textContent = t.refreshBtn;
   document.querySelectorAll('.lang-switch button').forEach(b=>{
     b.classList.toggle('active', b.dataset.lang === lang);
@@ -707,9 +778,43 @@ function renderBalances(){
 }
 
 // ---------- RESET / REFRESH ----------
-document.getElementById('resetBtn').addEventListener('click', async ()=>{
-  if(!confirm(T().resetConfirm)) return;
-  await withLatest(d => { d.members = []; d.ration = []; d.expenses = []; d.rent = []; });
+const RESET_PASSWORD = 'Badal@2003';
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  const panel = document.getElementById('resetPanel');
+  const showing = panel.style.display !== 'none';
+  if(showing){ panel.style.display = 'none'; return; }
+  const entered = prompt(T().resetPasswordPrompt);
+  if(entered === null) return;
+  if(entered !== RESET_PASSWORD){ alert(T().resetPasswordWrong); return; }
+  panel.style.display = 'block';
+  const years=[]; for(let y=2026;y<=new Date().getFullYear()+5;y++) years.push(y);
+  document.getElementById('resetYear').innerHTML = years.map(y=>`<option>${y}</option>`).join('');
+  document.getElementById('resetMonth').innerHTML = monthNames.map((m,i)=>`<option value="${i}">${m}</option>`).join('');
+  const now = new Date();
+  document.getElementById('resetYear').value = now.getFullYear();
+  document.getElementById('resetMonth').value = now.getMonth();
+});
+document.getElementById('resetCancelBtn').addEventListener('click', ()=>{
+  document.getElementById('resetPanel').style.display = 'none';
+});
+document.getElementById('resetMonthBtn').addEventListener('click', async ()=>{
+  if(!confirm(T().resetMonthConfirm)) return;
+  const y = Number(document.getElementById('resetYear').value);
+  const m = Number(document.getElementById('resetMonth').value);
+  await withLatest(d => {
+    d.expenses = d.expenses.filter(x => { const dt = new Date(x.ts); return !(dt.getFullYear()===y && dt.getMonth()===m); });
+    d.rent = d.rent.filter(x => !(x.year===y && x.month===m));
+  });
+  document.getElementById('resetPanel').style.display = 'none';
+});
+document.getElementById('resetYearBtn').addEventListener('click', async ()=>{
+  if(!confirm(T().resetYearConfirm)) return;
+  const y = Number(document.getElementById('resetYear').value);
+  await withLatest(d => {
+    d.expenses = d.expenses.filter(x => new Date(x.ts).getFullYear() !== y);
+    d.rent = d.rent.filter(x => x.year !== y);
+  });
+  document.getElementById('resetPanel').style.display = 'none';
 });
 document.getElementById('refreshBtn').addEventListener('click', loadAndRender);
 document.getElementById('headerRefreshBtn').addEventListener('click', loadAndRender);
@@ -793,6 +898,60 @@ setInterval(()=>{
   rationCardImgIndex = (rationCardImgIndex + 1) % rationCardImages.length;
   setRationCardBg();
 }, 5000);
+
+// ---------- ADMIN: secret unlock + device block/unblock ----------
+const ADMIN_PASSWORD = 'Badal@2003';
+let brandTapCount = 0;
+let brandTapTimer = null;
+document.getElementById('brandTapZone').addEventListener('click', ()=>{
+  brandTapCount++;
+  clearTimeout(brandTapTimer);
+  brandTapTimer = setTimeout(()=>{ brandTapCount = 0; }, 2000);
+  if(brandTapCount >= 5){
+    brandTapCount = 0;
+    const entered = prompt('Admin password:');
+    if(entered === ADMIN_PASSWORD){
+      localStorage.setItem('is-admin', 'true');
+      document.getElementById('navAdminBtn').style.display = 'flex';
+      alert('Admin unlocked on this device.');
+    } else if(entered !== null){
+      alert('Wrong password.');
+    }
+  }
+});
+
+function renderAdminList(){
+  const el = document.getElementById('adminDeviceList');
+  if(!el) return;
+  const myId = getDeviceId();
+  const devices = data.devices || {};
+  const blocked = data.blockedDevices || {};
+  const ids = Object.keys(devices);
+  if(!ids.length){ el.innerHTML = '<div class="empty">No devices seen yet</div>'; return; }
+  el.innerHTML = ids.map(id => {
+    const isBlocked = !!blocked[id];
+    const label = id + (id === myId ? ' (this device)' : '');
+    return `<div class="item-row">
+      <span class="item-name" style="font-size:12.5px; word-break:break-all;">${escapeHtml(label)}</span>
+      <button class="pill ${isBlocked?'khatam':'available'}" data-device-id="${id}" data-action="toggle-block">
+        ${isBlocked ? '⛔ Blocked' : '✅ Allowed'}
+      </button>
+    </div>`;
+  }).join('');
+}
+document.getElementById('adminDeviceList').addEventListener('click', async e=>{
+  const btn = e.target.closest('[data-action="toggle-block"]');
+  if(!btn) return;
+  const id = btn.dataset.deviceId;
+  await withLatest(d => {
+    if(!d.blockedDevices) d.blockedDevices = {};
+    if(d.blockedDevices[id]) delete d.blockedDevices[id];
+    else d.blockedDevices[id] = true;
+  });
+});
+const oldRenderAll2 = renderAll;
+renderAll = function(){ oldRenderAll2(); renderAdminList(); };
+renderAdminList();
 </script>
 </body>
 </html>
