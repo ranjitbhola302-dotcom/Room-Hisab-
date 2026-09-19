@@ -54,6 +54,21 @@
     border-radius:14px;
   }
   #rationCard > *{ position:relative; z-index:1; }
+  #membersCard{
+    position:relative;
+    background-image:url('members-bg.jpg');
+    background-size:cover;
+    background-position:center;
+    overflow:hidden;
+  }
+  #membersCard::before{
+    content:'';
+    position:absolute; inset:0;
+    background:rgba(255,253,246,0.80);
+    z-index:0;
+    border-radius:14px;
+  }
+  #membersCard > *{ position:relative; z-index:1; }
   header, main, nav.tabbar{ position:relative; z-index:1; }
   h1,h2,h3,.brand{font-family:var(--font-head);}
   header{
@@ -265,7 +280,7 @@
 
   <!-- HISAB TAB -->
   <section id="tab-hisab" class="tab-panel">
-    <div class="card">
+    <div class="card" id="membersCard">
       <div class="section-title" id="membersTitle"></div>
       <div id="memberChips"></div>
       <form class="inline" id="memberForm" style="margin-top:10px;">
