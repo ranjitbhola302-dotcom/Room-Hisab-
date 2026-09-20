@@ -1073,7 +1073,7 @@ function renderAdminList(){
           <button type="button" class="pill ${isBlocked?'khatam':'available'}" data-device-id="${escapeHtml(id)}" data-action="toggle-block">
             ${isBlocked ? '⛔ Blocked' : '✅ Allowed'}
           </button>
-          <button type="button" class="pill" data-device-id="${escapeHtml(id)}" data-action="remove-device" aria-label="Remove device" title="Remove device" style="min-width:38px; width:38px; padding:8px 0; background:#fde7e5; color:#b33a32; border:1px solid #f3c4c0;">🗑️</button>
+          <button type="button" class="pill" data-device-id="${escapeHtml(id)}" data-action="remove-device" aria-label="Remove device" title="Remove device" style="min-width:32px; width:32px; height:32px; padding:0; border-radius:9px; background:#fde7e5; color:#b33a32; border:1px solid #f3c4c0; font-size:15px; line-height:1;">🗑️</button>
         </div>
       </div>`;
     }).join('');
@@ -1119,10 +1119,33 @@ document.getElementById('adminDeviceList').addEventListener('click', async e=>{
       : 'Remove this device from the allowed devices list?');
     if(!ok) return;
 
-    await withLatest(d => {
-      if(d.devices && d.devices[id]) delete d.devices[id];
-      if(d.blockedDevices && d.blockedDevices[id]) delete d.blockedDevices[id];
-    }, 'Removed device: '+id);
+    busy = true;
+    btn.disabled = true;
+    setSyncStatus(T().syncing);
+    try{
+      const deviceUrl = DB_URL.replace(/\.json$/, '') + '/devices/' + encodeURIComponent(id) + '.json';
+      const blockedUrl = DB_URL.replace(/\.json$/, '') + '/blockedDevices/' + encodeURIComponent(id) + '.json';
+
+      const r1 = await fetch(deviceUrl, { method:'DELETE', cache:'no-store' });
+      if(!r1.ok) throw new Error('Device delete failed (HTTP '+r1.status+')');
+
+      const r2 = await fetch(blockedUrl, { method:'DELETE', cache:'no-store' });
+      if(!r2.ok) throw new Error('Blocked-device cleanup failed (HTTP '+r2.status+')');
+
+      const latest = await fetchRemote();
+      data = latest;
+      dirty = false;
+      setSyncStatus(T().synced);
+      renderAll();
+    }catch(err){
+      console.error('Device remove failed:', err);
+      setSyncStatus('⚠️ Device remove failed — try again');
+      try{ data = await fetchRemote(); renderAll(); }catch(_){ }
+    }finally{
+      busy = false;
+      btn.disabled = false;
+    }
+    return;
   }
 });
 const oldRenderAll2 = renderAll;
