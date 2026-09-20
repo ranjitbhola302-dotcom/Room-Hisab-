@@ -505,18 +505,41 @@ async function pushRemote(newData){
 }
 
 
-// Fetch latest, apply a change, push back, then update local view
+// Fetch the newest database state before every change.
+// This prevents an old local copy (especially device-tracking data) from
+// overwriting a newer expense/delete made on another action/device.
 async function withLatest(mutator, actionLabel){
   if(busy) return;
-  mutator(data);
-  if(actionLabel){
-    if(!data.activityLog) data.activityLog = [];
-    data.activityLog.push({ device: getDeviceId(), action: actionLabel, ts: Date.now() });
-    if(data.activityLog.length > 60) data.activityLog = data.activityLog.slice(-60);
+  busy = true;
+  setSyncStatus(T().syncing);
+
+  try{
+    const latest = await fetchRemote();
+    mutator(latest);
+
+    if(actionLabel){
+      if(!latest.activityLog) latest.activityLog = [];
+      latest.activityLog.push({
+        device: getDeviceId(),
+        action: actionLabel,
+        ts: Date.now()
+      });
+      if(latest.activityLog.length > 60){
+        latest.activityLog = latest.activityLog.slice(-60);
+      }
+    }
+
+    await pushRemote(latest);
+    data = latest;
+    dirty = false;
+    setSyncStatus(T().synced);
+    renderAll();
+  }catch(e){
+    dirty = true;
+    setSyncStatus(T().syncError);
+  }finally{
+    busy = false;
   }
-  dirty = true;
-  setSyncStatus('Changes pending — press Save / Sync');
-  renderAll();
 }
 
 async function loadAndRender(){
@@ -532,19 +555,34 @@ async function loadAndRender(){
   renderAll();
 }
 
-function checkBlockedAndRegisterDevice(){
+async function checkBlockedAndRegisterDevice(){
   const id = getDeviceId();
   if(data.blockedDevices && data.blockedDevices[id]){
     document.getElementById('blockScreen').style.display = 'flex';
     return;
   }
+
   document.getElementById('blockScreen').style.display = 'none';
+
+  // IMPORTANT: update only this device's node with PATCH.
+  // Never PUT the entire database here, otherwise a background device update
+  // can overwrite a newly-added/deleted expense or activity log.
+  const now = Date.now();
+  const deviceInfo = data.devices && data.devices[id] ? data.devices[id] : { firstSeen: now };
+  const patch = {
+    firstSeen: deviceInfo.firstSeen || now,
+    lastSeen: now
+  };
+
+  fetch(`https://room-manegement-d9cf1-default-rtdb.firebaseio.com/roomhisab/devices/${encodeURIComponent(id)}.json`, {
+    method:'PATCH',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(patch)
+  }).catch(()=>{});
+
   if(!data.devices) data.devices = {};
-  const isNew = !data.devices[id];
-  if(isNew) data.devices[id] = { firstSeen: Date.now() };
-  data.devices[id].lastSeen = Date.now();
-  // Quietly persist the visit timestamp without needing the user to press Save/Sync
-  pushRemote(data).catch(()=>{});
+  data.devices[id] = patch;
+
   if(localStorage.getItem('is-admin') === 'true'){
     document.getElementById('navAdminBtn').style.display = 'flex';
   }
