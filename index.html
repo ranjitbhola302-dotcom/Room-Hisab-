@@ -219,7 +219,7 @@
     <div>
       <div class="brand" id="brandTapZone">🏠 <span id="brandText">Room Hisab</span></div>
       <div class="sub" id="subText"></div>
-      <div class="sync-status" id="syncStatus"></div>
+      <div class="sync-status" id="syncStatus"></div><div style="font-size:10px;opacity:.55;margin-top:2px;">Delete Fix 2.0</div>
     </div>
     <div>
       <div class="lang-switch" id="langSwitch">
@@ -771,9 +771,17 @@ function renderExpenses(){
   const monthTotal = filtered.reduce((s,ex)=>s+Number(ex.amount),0);
   document.getElementById('monthTotal').textContent = '₹' + monthTotal;
 }
+
+// IMPORTANT: expense delete is done directly on the Firebase child that
+// contains the expense. It does NOT PUT the whole database back.
+// This avoids the old read-modify-write race that could immediately restore
+// a deleted expense.
 document.getElementById('expenseList').addEventListener('click', async e=>{
   const btn = e.target.closest('button[data-action="delete-expense"]');
   if(!btn) return;
+
+  e.preventDefault();
+  e.stopPropagation();
 
   const expenseId = String(btn.dataset.expenseId || '');
   if(!expenseId || busy) return;
@@ -787,81 +795,36 @@ document.getElementById('expenseList').addEventListener('click', async e=>{
   setSyncStatus(T().syncing);
 
   try{
-    // Use Firebase's ETag/If-Match so another device cannot overwrite this
-    // deletion with an older copy of the database.
-    let deleted = false;
-    for(let attempt = 0; attempt < 5 && !deleted; attempt++){
-      const res = await fetch(DB_URL, {
-        method:'GET',
-        cache:'no-store',
-        headers:{ 'X-Firebase-ETag':'true' }
-      });
-      if(!res.ok) throw new Error('delete read failed');
-      const remoteJson = await res.json();
-      const etag = res.headers.get('ETag');
-      if(!etag) throw new Error('Firebase ETag unavailable');
+    // Read the latest array first so we know the Firebase array index.
+    const latest = await fetchRemote();
+    const index = latest.expenses.findIndex(x => String(x.id) === expenseId);
 
-      const safe = remoteJson && typeof remoteJson === 'object' ? remoteJson : {};
-      const latest = {
-        members: Array.isArray(safe.members) ? safe.members : [],
-        ration: Array.isArray(safe.ration) ? safe.ration : [],
-        expenses: Array.isArray(safe.expenses) ? safe.expenses : [],
-        rent: Array.isArray(safe.rent) ? safe.rent : [],
-        devices: safe.devices && typeof safe.devices === 'object' ? safe.devices : {},
-        blockedDevices: safe.blockedDevices && typeof safe.blockedDevices === 'object' ? safe.blockedDevices : {},
-        activityLog: Array.isArray(safe.activityLog) ? safe.activityLog : []
-      };
-
-      const before = latest.expenses.length;
-      const target = latest.expenses.find(x => String(x.id) === expenseId);
-      latest.expenses = latest.expenses.filter(x => String(x.id) !== expenseId);
-
-      if(latest.expenses.length === before){
-        data = latest;
-        setSyncStatus(T().synced);
-        renderAll();
-        deleted = true;
-        break;
-      }
-
-      latest.activityLog.push({
-        device:getDeviceId(),
-        action:`Deleted expense: ₹${target?.amount ?? localExpense.amount} (${target?.note ?? localExpense.note}) - ${target?.member ?? localExpense.member}`,
-        ts:Date.now()
-      });
-      if(latest.activityLog.length > 60) latest.activityLog = latest.activityLog.slice(-60);
-
-      const put = await fetch(DB_URL, {
-        method:'PUT',
-        headers:{
-          'Content-Type':'application/json',
-          'If-Match':etag
-        },
-        body:JSON.stringify(latest)
-      });
-
-      if(put.status === 412){
-        // Database changed between GET and PUT. Re-read and try again.
-        continue;
-      }
-      if(!put.ok) throw new Error('delete write failed');
-      deleted = true;
+    if(index < 0){
+      data = latest;
+      renderAll();
+      setSyncStatus(T().synced);
+      return;
     }
 
-    if(!deleted) throw new Error('delete conflict: retry limit reached');
-
-    // Final verification from Firebase.
-    const verify = await fetchRemote();
-    if(verify.expenses.some(x => String(x.id) === expenseId)){
-      throw new Error('delete verification failed');
+    const deleteUrl = DB_URL.replace(/\.json$/, '') + '/expenses/' + index + '.json';
+    const del = await fetch(deleteUrl, { method:'DELETE', cache:'no-store' });
+    if(!del.ok){
+      throw new Error('Firebase delete failed (HTTP ' + del.status + ')');
     }
-    data = verify;
+
+    // Verify from Firebase, not from local state.
+    const verified = await fetchRemote();
+    if(verified.expenses.some(x => String(x.id) === expenseId)){
+      throw new Error('Firebase still contains this expense after delete');
+    }
+
+    data = verified;
     dirty = false;
     setSyncStatus(T().synced);
     renderAll();
   }catch(err){
     console.error('Expense delete failed:', err);
-    setSyncStatus('⚠️ Delete failed — please try again');
+    setSyncStatus('⚠️ Delete failed: ' + (err.message || 'try again'));
     try{
       data = await fetchRemote();
       renderAll();
@@ -871,6 +834,7 @@ document.getElementById('expenseList').addEventListener('click', async e=>{
     btn.disabled = false;
   }
 });
+
 document.getElementById('expenseForm').addEventListener('submit', async e=>{
   e.preventDefault();
   const member = document.getElementById('expMember').value;
