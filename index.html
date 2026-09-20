@@ -350,6 +350,10 @@
       <div class="section-title">⚙️ Devices</div>
       <div id="adminDeviceList"></div>
     </div>
+    <div class="card">
+      <div class="section-title">📋 Recent activity</div>
+      <div id="adminActivityLog"></div>
+    </div>
   </section>
 
 </main>
@@ -460,7 +464,7 @@ const STR = {
 };
 
 let lang = localStorage.getItem('lang-pref') || 'hi';
-let data = { members: [], ration: [], expenses: [], rent: [], devices: {}, blockedDevices: {} };
+let data = { members: [], ration: [], expenses: [], rent: [], devices: {}, blockedDevices: {}, activityLog: [] };
 let busy = false;
 let selectedYear = new Date().getFullYear();
 let selectedMonth = new Date().getMonth();
@@ -487,7 +491,8 @@ async function fetchRemote(){
     expenses: Array.isArray(safe.expenses) ? safe.expenses : [],
     rent: Array.isArray(safe.rent) ? safe.rent : [],
     devices: safe.devices && typeof safe.devices === 'object' ? safe.devices : {},
-    blockedDevices: safe.blockedDevices && typeof safe.blockedDevices === 'object' ? safe.blockedDevices : {}
+    blockedDevices: safe.blockedDevices && typeof safe.blockedDevices === 'object' ? safe.blockedDevices : {},
+    activityLog: Array.isArray(safe.activityLog) ? safe.activityLog : []
   };
 }
 async function pushRemote(newData){
@@ -501,9 +506,14 @@ async function pushRemote(newData){
 
 
 // Fetch latest, apply a change, push back, then update local view
-async function withLatest(mutator){
+async function withLatest(mutator, actionLabel){
   if(busy) return;
   mutator(data);
+  if(actionLabel){
+    if(!data.activityLog) data.activityLog = [];
+    data.activityLog.push({ device: getDeviceId(), action: actionLabel, ts: Date.now() });
+    if(data.activityLog.length > 60) data.activityLog = data.activityLog.slice(-60);
+  }
   dirty = true;
   setSyncStatus('Changes pending — press Save / Sync');
   renderAll();
@@ -530,12 +540,11 @@ function checkBlockedAndRegisterDevice(){
   }
   document.getElementById('blockScreen').style.display = 'none';
   if(!data.devices) data.devices = {};
-  if(!data.devices[id]){
-    data.devices[id] = { firstSeen: Date.now() };
-    withLatest(d => { if(!d.devices) d.devices = {}; d.devices[id] = { firstSeen: Date.now() }; });
-  } else {
-    data.devices[id].lastSeen = Date.now();
-  }
+  const isNew = !data.devices[id];
+  if(isNew) data.devices[id] = { firstSeen: Date.now() };
+  data.devices[id].lastSeen = Date.now();
+  // Quietly persist the visit timestamp without needing the user to press Save/Sync
+  pushRemote(data).catch(()=>{});
   if(localStorage.getItem('is-admin') === 'true'){
     document.getElementById('navAdminBtn').style.display = 'flex';
   }
@@ -621,19 +630,21 @@ document.getElementById('rationForm').addEventListener('submit', async e=>{
   const name = input.value.trim();
   if(!name) return;
   input.value='';
-  await withLatest(d => d.ration.push({id: uid(), name, status:'khatam'}));
+  await withLatest(d => d.ration.push({id: uid(), name, status:'khatam'}), 'Added ration: '+name);
 });
 document.getElementById('rationList').addEventListener('click', async e=>{
   const btn = e.target.closest('button');
   if(!btn) return;
   const id = btn.dataset.id;
   if(btn.dataset.action === 'toggle'){
+    const itemName = (data.ration.find(r=>r.id===id)||{}).name || id;
     await withLatest(d => {
       const item = d.ration.find(r=>r.id===id);
       if(item) item.status = item.status === 'khatam' ? 'available' : 'khatam';
-    });
+    }, 'Toggled ration: '+itemName);
   } else if(btn.dataset.action === 'delete-ration'){
-    await withLatest(d => { d.ration = d.ration.filter(r=>r.id!==id); });
+    const itemName = (data.ration.find(r=>r.id===id)||{}).name || id;
+    await withLatest(d => { d.ration = d.ration.filter(r=>r.id!==id); }, 'Deleted ration: '+itemName);
   }
 });
 
@@ -656,13 +667,13 @@ document.getElementById('memberForm').addEventListener('submit', async e=>{
   const name = input.value.trim();
   if(!name) { return; }
   input.value='';
-  await withLatest(d => { if(!d.members.includes(name)) d.members.push(name); });
+  await withLatest(d => { if(!d.members.includes(name)) d.members.push(name); }, 'Added member: '+name);
 });
 document.getElementById('memberChips').addEventListener('click', async e=>{
   const btn = e.target.closest('button');
   if(!btn || btn.dataset.action !== 'delete-member') return;
   const name = btn.dataset.name;
-  await withLatest(d => { d.members = d.members.filter(m=>m!==name); });
+  await withLatest(d => { d.members = d.members.filter(m=>m!==name); }, 'Removed member: '+name);
 });
 
 function setupMonthFilters(){
@@ -726,7 +737,9 @@ document.getElementById('expenseList').addEventListener('click', async e=>{
   const btn = e.target.closest('[data-expense-id]');
   if(!btn) return;
   if(!confirm('Delete this expense?')) return;
-  await withLatest(d => { d.expenses = d.expenses.filter(x => x.id !== btn.dataset.expenseId); });
+  const ex = data.expenses.find(x=>x.id===btn.dataset.expenseId);
+  const label = ex ? `Deleted expense: ₹${ex.amount} (${ex.note}) - ${ex.member}` : 'Deleted expense';
+  await withLatest(d => { d.expenses = d.expenses.filter(x => x.id !== btn.dataset.expenseId); }, label);
 });
 
 document.getElementById('expenseForm').addEventListener('submit', async e=>{
@@ -737,7 +750,7 @@ document.getElementById('expenseForm').addEventListener('submit', async e=>{
   if(!member || !amount || !note) return;
   document.getElementById('expAmount').value='';
   document.getElementById('expNote').value='';
-  await withLatest(d => { d.expenses.push({id: uid(), member, amount, note, ts: Date.now()}); });
+  await withLatest(d => { d.expenses.push({id: uid(), member, amount, note, ts: Date.now()}); }, `Added expense: ₹${amount} (${note}) - ${member}`);
 });
 
 // ---------- BALANCES / SETTLEMENT ----------
@@ -815,7 +828,7 @@ document.getElementById('resetMonthBtn').addEventListener('click', async ()=>{
   await withLatest(d => {
     d.expenses = d.expenses.filter(x => { const dt = new Date(x.ts); return !(dt.getFullYear()===y && dt.getMonth()===m); });
     d.rent = d.rent.filter(x => !(x.year===y && x.month===m));
-  });
+  }, `RESET month: ${monthNames[m]} ${y}`);
   document.getElementById('resetPanel').style.display = 'none';
 });
 document.getElementById('resetYearBtn').addEventListener('click', async ()=>{
@@ -824,7 +837,7 @@ document.getElementById('resetYearBtn').addEventListener('click', async ()=>{
   await withLatest(d => {
     d.expenses = d.expenses.filter(x => new Date(x.ts).getFullYear() !== y);
     d.rent = d.rent.filter(x => x.year !== y);
-  });
+  }, `RESET entire year: ${y}`);
   document.getElementById('resetPanel').style.display = 'none';
 });
 document.getElementById('refreshBtn').addEventListener('click', loadAndRender);
@@ -881,9 +894,9 @@ function renderMainData(){
 }
 const oldRenderAll=renderAll; renderAll=function(){oldRenderAll();renderRent();renderMainData();renderAllMonthsHistory();};
 fillDateSelects();
-document.getElementById('rentForm').addEventListener('submit',e=>{e.preventDefault();const extra=[...document.querySelectorAll('.extra-charge')].map(row=>({name:row.querySelector('.extra-name').value.trim(),amount:Number(row.querySelector('.extra-amount').value||0)})).filter(x=>x.name&&x.amount);withLatest(d=>d.rent.push({id:uid(),year:Number(rentYear.value),month:Number(rentMonth.value),roomRent:Number(roomRent.value||0),electricBill:Number(electricBill.value||0),extra}));e.target.reset();fillDateSelects();});
+document.getElementById('rentForm').addEventListener('submit',e=>{e.preventDefault();const extra=[...document.querySelectorAll('.extra-charge')].map(row=>({name:row.querySelector('.extra-name').value.trim(),amount:Number(row.querySelector('.extra-amount').value||0)})).filter(x=>x.name&&x.amount);const y=Number(rentYear.value),m=Number(rentMonth.value);withLatest(d=>d.rent.push({id:uid(),year:y,month:m,roomRent:Number(roomRent.value||0),electricBill:Number(electricBill.value||0),extra}), `Added rent: ${monthNames[m]} ${y}`);e.target.reset();fillDateSelects();});
 document.getElementById('addExtraBtn').addEventListener('click',()=>{const row=document.createElement('div');row.className='extra-charge';row.style='display:flex;gap:8px;margin-bottom:8px;';row.innerHTML='<input class="extra-name" placeholder="Charge name" required><input class="extra-amount" type="number" min="0" placeholder="Amount ₹" required>';document.getElementById('extraCharges').appendChild(row);});
-document.getElementById('rentList').addEventListener('click',e=>{const b=e.target.closest('[data-rent-id]');if(b)withLatest(d=>{d.rent=d.rent.filter(x=>x.id!==b.dataset.rentId);});});
+document.getElementById('rentList').addEventListener('click',e=>{const b=e.target.closest('[data-rent-id]');if(b){const r=data.rent.find(x=>x.id===b.dataset.rentId);const label=r?`Deleted rent: ${monthNames[r.month]} ${r.year}`:'Deleted rent';withLatest(d=>{d.rent=d.rent.filter(x=>x.id!==b.dataset.rentId);}, label);}});
 ['mainYear','mainMonth'].forEach(id=>document.getElementById(id).addEventListener('change',renderMainData));
 
 function escapeHtml(str){
@@ -951,34 +964,68 @@ document.getElementById('brandTapZone').addEventListener('click', ()=>{
   }
 });
 
+function timeAgo(ts){
+  if(!ts) return 'never';
+  const diff = Date.now() - ts;
+  const min = Math.floor(diff/60000);
+  if(min < 1) return 'just now';
+  if(min < 60) return min+'m ago';
+  const hr = Math.floor(min/60);
+  if(hr < 24) return hr+'h ago';
+  const day = Math.floor(hr/24);
+  return day+'d ago';
+}
 function renderAdminList(){
   const el = document.getElementById('adminDeviceList');
   if(!el) return;
   const myId = getDeviceId();
   const devices = data.devices || {};
   const blocked = data.blockedDevices || {};
-  const ids = Object.keys(devices);
-  if(!ids.length){ el.innerHTML = '<div class="empty">No devices seen yet</div>'; return; }
-  el.innerHTML = ids.map(id => {
-    const isBlocked = !!blocked[id];
-    const label = id + (id === myId ? ' (this device)' : '');
-    return `<div class="item-row">
-      <span class="item-name" style="font-size:12.5px; word-break:break-all;">${escapeHtml(label)}</span>
-      <button class="pill ${isBlocked?'khatam':'available'}" data-device-id="${id}" data-action="toggle-block">
-        ${isBlocked ? '⛔ Blocked' : '✅ Allowed'}
-      </button>
-    </div>`;
-  }).join('');
+  const ids = Object.keys(devices).sort((a,b)=> (devices[b].lastSeen||devices[b].firstSeen||0) - (devices[a].lastSeen||devices[a].firstSeen||0));
+  let html = '';
+  if(!ids.length){
+    html = '<div class="empty">No devices seen yet</div>';
+  } else {
+    html = ids.map(id => {
+      const isBlocked = !!blocked[id];
+      const label = id + (id === myId ? ' (this device)' : '');
+      const last = devices[id].lastSeen || devices[id].firstSeen;
+      return `<div class="item-row" style="flex-wrap:wrap;">
+        <div style="flex:1; min-width:180px;">
+          <div class="item-name" style="font-size:12.5px; word-break:break-all;">${escapeHtml(label)}</div>
+          <div style="font-size:11.5px; color:var(--ink-soft);">Last active: ${timeAgo(last)}</div>
+        </div>
+        <button class="pill ${isBlocked?'khatam':'available'}" data-device-id="${id}" data-action="toggle-block">
+          ${isBlocked ? '⛔ Blocked' : '✅ Allowed'}
+        </button>
+      </div>`;
+    }).join('');
+  }
+  el.innerHTML = html;
+
+  const logEl = document.getElementById('adminActivityLog');
+  if(logEl){
+    const log = [...(data.activityLog||[])].sort((a,b)=>b.ts-a.ts).slice(0,20);
+    logEl.innerHTML = log.length ? log.map(entry => `
+      <div class="expense-row">
+        <div>
+          <div class="expense-who" style="font-size:13px;">${escapeHtml(entry.action)}</div>
+          <div class="expense-what" style="font-size:11px; word-break:break-all;">${entry.device===myId?'This device':escapeHtml(entry.device)} · ${timeAgo(entry.ts)}</div>
+        </div>
+      </div>
+    `).join('') : '<div class="empty">No activity yet</div>';
+  }
 }
 document.getElementById('adminDeviceList').addEventListener('click', async e=>{
   const btn = e.target.closest('[data-action="toggle-block"]');
   if(!btn) return;
   const id = btn.dataset.deviceId;
+  const willBlock = !(data.blockedDevices && data.blockedDevices[id]);
   await withLatest(d => {
     if(!d.blockedDevices) d.blockedDevices = {};
     if(d.blockedDevices[id]) delete d.blockedDevices[id];
     else d.blockedDevices[id] = true;
-  });
+  }, (willBlock?'Blocked device: ':'Unblocked device: ')+id);
 });
 const oldRenderAll2 = renderAll;
 renderAll = function(){ oldRenderAll2(); renderAdminList(); };
