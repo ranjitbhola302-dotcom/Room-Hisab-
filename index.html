@@ -123,7 +123,7 @@
   .item-name{font-weight:600; font-size:15px; flex:1;}
   .del-btn{
     background:#F6DAD6; border:none; color:var(--spice); font-size:16px; font-weight:700;
-    cursor:pointer; padding:6px 11px; line-height:1; border-radius:8px; min-width:34px; min-height:34px; touch-action:manipulation; -webkit-tap-highlight-color:rgba(0,0,0,.08);
+    cursor:pointer; padding:6px 11px; line-height:1; border-radius:8px; min-width:34px; min-height:34px;
   }
   .empty{
     text-align:center; color:var(--ink-soft); padding:24px 10px; font-size:14px;
@@ -388,6 +388,7 @@
   <button class="tab-btn" data-tab="admin" id="navAdminBtn" style="display:none;"><span class="ic">⚙️</span><span>Admin</span></button>
 </nav>
 
+<!-- Device Remove 1.0: Admin can remove individual device entries. -->
 <script>
 const DB_URL = 'https://room-manegement-d9cf1-default-rtdb.firebaseio.com/roomhisab.json';
 
@@ -488,7 +489,7 @@ async function fetchRemote(){
   return {
     members: Array.isArray(safe.members) ? safe.members : [],
     ration: Array.isArray(safe.ration) ? safe.ration : [],
-    expenses: Array.isArray(safe.expenses) ? safe.expenses.filter(x=>x && typeof x==='object') : [],
+    expenses: Array.isArray(safe.expenses) ? safe.expenses : [],
     rent: Array.isArray(safe.rent) ? safe.rent : [],
     devices: safe.devices && typeof safe.devices === 'object' ? safe.devices : {},
     blockedDevices: safe.blockedDevices && typeof safe.blockedDevices === 'object' ? safe.blockedDevices : {},
@@ -797,98 +798,23 @@ function renderExpenses(){
   const monthTotal = filtered.reduce((s,ex)=>s+Number(ex.amount),0);
   document.getElementById('monthTotal').textContent = '₹' + monthTotal;
 }
-async function deleteExpenseFromFirebase(btn){
-  if(!btn || btn.dataset.deleting === '1') return;
-
+document.getElementById('expenseList').addEventListener('click', async e=>{
+  const btn = e.target.closest('button[data-action="delete-expense"]');
+  if(!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
   const expenseId = String(btn.dataset.expenseId || '');
-  if(!expenseId) return;
-
-  const localExpense = (Array.isArray(data.expenses) ? data.expenses : [])
-    .find(x => x && String(x.id) === expenseId);
-  if(!localExpense) return;
-
-  btn.dataset.deleting = '1';
+  if(!expenseId || busy) return;
+  if(!confirm('Delete this expense?')) return;
+  const ex = data.expenses.find(x => String(x.id) === expenseId);
+  if(!ex) return;
   btn.disabled = true;
-  setSyncStatus('Deleting...');
-
   try{
-    // IMPORTANT:
-    // expenses is stored as a Firebase array. DELETE /expenses/<index>
-    // creates a null array item, so we instead PUT the cleaned array back
-    // ONLY to /expenses. This cannot overwrite members/ration/rent/devices.
-    const latest = await fetchRemote();
-    const current = (Array.isArray(latest.expenses) ? latest.expenses : [])
-      .filter(x => x && typeof x === 'object');
-
-    const before = current.length;
-    const remaining = current.filter(x => String(x.id) !== expenseId);
-
-    if(remaining.length === before){
-      data = latest;
-      renderAll();
-      setSyncStatus(T().synced);
-      return;
-    }
-
-    const expensesUrl = DB_URL.replace(/\.json$/, '') + '/expenses.json';
-    const res = await fetch(expensesUrl, {
-      method:'PUT',
-      headers:{'Content-Type':'application/json'},
-      cache:'no-store',
-      body:JSON.stringify(remaining)
-    });
-
-    if(!res.ok){
-      throw new Error('Firebase HTTP ' + res.status);
-    }
-
-    // Verify the actual Firebase data.
-    const verify = await fetchRemote();
-    const stillThere = (Array.isArray(verify.expenses) ? verify.expenses : [])
-      .some(x => x && String(x.id) === expenseId);
-
-    if(stillThere){
-      throw new Error('Expense is still in Firebase');
-    }
-
-    data = verify;
-    dirty = false;
-    setSyncStatus(T().synced);
-    renderAll();
-
-  }catch(err){
-    console.error('Expense delete failed:', err);
-    setSyncStatus('⚠️ Delete failed: ' + (err && err.message ? err.message : 'Unknown error'));
-    try{
-      data = await fetchRemote();
-      // Remove any invalid/null array items from the UI data only.
-      data.expenses = (Array.isArray(data.expenses) ? data.expenses : [])
-        .filter(x => x && typeof x === 'object');
-      renderAll();
-    }catch(_){}
+    await withLatest(d => { d.expenses = d.expenses.filter(x => String(x.id) !== expenseId); }, `Deleted expense: ₹${ex.amount} (${ex.note}) - ${ex.member}`);
   }finally{
     btn.disabled = false;
-    delete btn.dataset.deleting;
   }
-}
-
-document.getElementById('expenseList').addEventListener('click', e=>{
-  const btn = e.target.closest('button[data-action="delete-expense"]');
-  if(!btn) return;
-  e.preventDefault();
-  e.stopPropagation();
-  deleteExpenseFromFirebase(btn);
 });
-
-// Android/WebView touch fallback. Prevents a touch from being swallowed
-// before the normal click event is generated.
-document.getElementById('expenseList').addEventListener('touchend', e=>{
-  const btn = e.target.closest('button[data-action="delete-expense"]');
-  if(!btn) return;
-  e.preventDefault();
-  e.stopPropagation();
-  deleteExpenseFromFirebase(btn);
-}, {passive:false});
 
 document.getElementById('expenseForm').addEventListener('submit', async e=>{
   e.preventDefault();
@@ -1143,9 +1069,12 @@ function renderAdminList(){
           <div class="item-name" style="font-size:12.5px; word-break:break-all;">${escapeHtml(label)}</div>
           <div style="font-size:11.5px; color:var(--ink-soft);">Last active: ${timeAgo(last)}</div>
         </div>
-        <button class="pill ${isBlocked?'khatam':'available'}" data-device-id="${id}" data-action="toggle-block">
-          ${isBlocked ? '⛔ Blocked' : '✅ Allowed'}
-        </button>
+        <div style="display:flex; gap:6px; align-items:center; flex-shrink:0;">
+          <button type="button" class="pill ${isBlocked?'khatam':'available'}" data-device-id="${escapeHtml(id)}" data-action="toggle-block">
+            ${isBlocked ? '⛔ Blocked' : '✅ Allowed'}
+          </button>
+          <button type="button" class="pill" data-device-id="${escapeHtml(id)}" data-action="remove-device" aria-label="Remove device" title="Remove device" style="min-width:38px; width:38px; padding:8px 0; background:#fde7e5; color:#b33a32; border:1px solid #f3c4c0;">🗑️</button>
+        </div>
       </div>`;
     }).join('');
   }
@@ -1165,15 +1094,36 @@ function renderAdminList(){
   }
 }
 document.getElementById('adminDeviceList').addEventListener('click', async e=>{
-  const btn = e.target.closest('[data-action="toggle-block"]');
+  const btn = e.target.closest('button[data-action]');
   if(!btn) return;
-  const id = btn.dataset.deviceId;
-  const willBlock = !(data.blockedDevices && data.blockedDevices[id]);
-  await withLatest(d => {
-    if(!d.blockedDevices) d.blockedDevices = {};
-    if(d.blockedDevices[id]) delete d.blockedDevices[id];
-    else d.blockedDevices[id] = true;
-  }, (willBlock?'Blocked device: ':'Unblocked device: ')+id);
+  const id = String(btn.dataset.deviceId || '');
+  if(!id) return;
+
+  if(btn.dataset.action === 'toggle-block'){
+    const willBlock = !(data.blockedDevices && data.blockedDevices[id]);
+    await withLatest(d => {
+      if(!d.blockedDevices) d.blockedDevices = {};
+      if(d.blockedDevices[id]) delete d.blockedDevices[id];
+      else d.blockedDevices[id] = true;
+    }, (willBlock?'Blocked device: ':'Unblocked device: ')+id);
+    return;
+  }
+
+  if(btn.dataset.action === 'remove-device'){
+    if(busy) return;
+    const device = data.devices && data.devices[id];
+    if(!device) return;
+    const isCurrent = id === getDeviceId();
+    const ok = confirm(isCurrent
+      ? 'Remove this device from the list? It may appear again when this device becomes active.'
+      : 'Remove this device from the allowed devices list?');
+    if(!ok) return;
+
+    await withLatest(d => {
+      if(d.devices && d.devices[id]) delete d.devices[id];
+      if(d.blockedDevices && d.blockedDevices[id]) delete d.blockedDevices[id];
+    }, 'Removed device: '+id);
+  }
 });
 const oldRenderAll2 = renderAll;
 renderAll = function(){ oldRenderAll2(); renderAdminList(); };
