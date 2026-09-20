@@ -762,7 +762,7 @@ function renderExpenses(){
       </div>
       <div>
         <div class="expense-amt">₹${ex.amount}</div>
-        <button class="del-btn" data-expense-id="${ex.id}" aria-label="Delete expense">✕</button>
+        <button type="button" class="del-btn" data-action="delete-expense" data-expense-id="${escapeHtml(String(ex.id))}" aria-label="Delete expense">✕</button>
       </div>
     </div>
   `;
@@ -772,12 +772,66 @@ function renderExpenses(){
   document.getElementById('monthTotal').textContent = '₹' + monthTotal;
 }
 document.getElementById('expenseList').addEventListener('click', async e=>{
-  const btn = e.target.closest('[data-expense-id]');
+  const btn = e.target.closest('button[data-action="delete-expense"]');
   if(!btn) return;
+
+  const expenseId = String(btn.dataset.expenseId || '');
+  if(!expenseId) return;
+
+  const ex = data.expenses.find(x => String(x.id) === expenseId);
+  if(!ex) return;
+
   if(!confirm('Delete this expense?')) return;
-  const ex = data.expenses.find(x=>x.id===btn.dataset.expenseId);
-  const label = ex ? `Deleted expense: ₹${ex.amount} (${ex.note}) - ${ex.member}` : 'Deleted expense';
-  await withLatest(d => { d.expenses = d.expenses.filter(x => x.id !== btn.dataset.expenseId); }, label);
+  if(busy) return;
+
+  busy = true;
+  setSyncStatus(T().syncing);
+
+  try{
+    // Always read the newest Firebase data first, then remove ONLY this expense.
+    const latest = await fetchRemote();
+    const before = latest.expenses.length;
+    latest.expenses = latest.expenses.filter(x => String(x.id) !== expenseId);
+
+    if(latest.expenses.length === before){
+      // It may already have been deleted on another device.
+      data = latest;
+      setSyncStatus(T().synced);
+      renderAll();
+      return;
+    }
+
+    if(!latest.activityLog) latest.activityLog = [];
+    latest.activityLog.push({
+      device: getDeviceId(),
+      action: `Deleted expense: ₹${ex.amount} (${ex.note}) - ${ex.member}`,
+      ts: Date.now()
+    });
+    if(latest.activityLog.length > 60) latest.activityLog = latest.activityLog.slice(-60);
+
+    await pushRemote(latest);
+
+    // Verify that the deletion really reached Firebase.
+    const verified = await fetchRemote();
+    const stillThere = verified.expenses.some(x => String(x.id) === expenseId);
+    if(stillThere) throw new Error('delete verification failed');
+
+    data = verified;
+    dirty = false;
+    setSyncStatus(T().synced);
+    renderAll();
+  }catch(err){
+    console.error('Expense delete failed:', err);
+    dirty = false;
+    setSyncStatus(T().syncError);
+    // Reload the actual server state so the screen never lies about deletion.
+    try{
+      data = await fetchRemote();
+      renderAll();
+    }catch(_){}
+  }finally{
+    busy = false;
+  }
 });
 
 document.getElementById('expenseForm').addEventListener('submit', async e=>{
