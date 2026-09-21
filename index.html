@@ -347,16 +347,34 @@
   <!-- ADMIN TAB (hidden unless unlocked on this device) -->
   <section id="tab-admin" class="tab-panel">
     <div class="card">
-      <div class="section-title">⚙️ Devices</div>
+      <div class="section-title">🛡️ Admin Panel</div>
+      <div style="font-size:12.5px; color:var(--ink-soft); margin-top:-6px; margin-bottom:12px;">Manage devices and app security</div>
+      <div id="adminStats" style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;"></div>
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px;">
+        <input type="text" id="adminSearch" placeholder="Search device name or ID...">
+      </div>
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
+        <span style="font-size:12.5px; color:var(--ink-soft);">Device limit:</span>
+        <input type="number" id="adminDeviceLimit" min="0" style="width:70px;">
+        <button class="btn" id="adminDeviceLimitSave" style="padding:6px 12px; font-size:12px;">Save</button>
+      </div>
       <div id="adminDeviceList"></div>
+      <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+        <div style="font-size:12px; color:var(--ink-soft); max-width:220px;">Remove every device inactive for 30+ days</div>
+        <button class="btn" id="adminRemoveInactiveBtn" style="background:var(--spice);">🗑️ Remove inactive</button>
+      </div>
     </div>
     <div class="card">
-      <div class="section-title">📋 Recent activity</div>
+      <div class="section-title" style="display:flex; justify-content:space-between; align-items:center;">
+        <span>📋 Recent activity</span>
+        <button class="muted-link" id="adminActivityViewAllBtn" style="padding:0;">View all</button>
+      </div>
       <div id="adminActivityLog"></div>
     </div>
   </section>
 
 </main>
+
 
 <div id="blockScreen" style="display:none; position:fixed; inset:0; z-index:999; background:var(--bg); align-items:center; justify-content:center; text-align:center; padding:30px;">
   <div>
@@ -1049,31 +1067,76 @@ function timeAgo(ts){
   const day = Math.floor(hr/24);
   return day+'d ago';
 }
+const INACTIVE_DAYS = 30;
+let adminSearchQuery = '';
+let adminShowAllActivity = false;
+
+function statChip(label, value, color){
+  return `<div style="flex:1; min-width:80px; background:${color}18; border:1px solid ${color}40; border-radius:12px; padding:8px 10px;">
+    <div style="font-size:11px; color:${color}; font-weight:700;">${label}</div>
+    <div style="font-size:18px; font-weight:700; color:var(--ink);">${value}</div>
+  </div>`;
+}
+
 function renderAdminList(){
   const el = document.getElementById('adminDeviceList');
   if(!el) return;
   const myId = getDeviceId();
   const devices = data.devices || {};
   const blocked = data.blockedDevices || {};
-  const ids = Object.keys(devices).sort((a,b)=> (devices[b].lastSeen||devices[b].firstSeen||0) - (devices[a].lastSeen||devices[a].firstSeen||0));
+  const now = Date.now();
+  let ids = Object.keys(devices);
+
+  // Stats
+  const allowedCount = ids.filter(id=>!blocked[id]).length;
+  const blockedCount = ids.filter(id=>!!blocked[id]).length;
+  const inactiveCount = ids.filter(id=>{
+    const last = devices[id].lastSeen || devices[id].firstSeen || 0;
+    return (now - last) > INACTIVE_DAYS*24*60*60*1000;
+  }).length;
+  const statsEl = document.getElementById('adminStats');
+  if(statsEl){
+    statsEl.innerHTML =
+      statChip('Allowed', allowedCount, '#4F7942') +
+      statChip('Blocked', blockedCount, '#A63A2D') +
+      statChip('Total', ids.length, '#D98E04') +
+      statChip('Inactive 30d+', inactiveCount, '#6B5D4C');
+  }
+
+  // Device limit field (only fill once so typing isn't disrupted)
+  const limitInput = document.getElementById('adminDeviceLimit');
+  if(limitInput && document.activeElement !== limitInput){
+    limitInput.value = (data.deviceLimit === undefined || data.deviceLimit === null) ? '' : data.deviceLimit;
+  }
+
+  // Search filter
+  if(adminSearchQuery){
+    const q = adminSearchQuery.toLowerCase();
+    ids = ids.filter(id => id.toLowerCase().includes(q) || ((devices[id].name||'').toLowerCase().includes(q)));
+  }
+  ids.sort((a,b)=> (devices[b].lastSeen||devices[b].firstSeen||0) - (devices[a].lastSeen||devices[a].firstSeen||0));
+
   let html = '';
   if(!ids.length){
-    html = '<div class="empty">No devices seen yet</div>';
+    html = '<div class="empty">No devices found</div>';
   } else {
     html = ids.map(id => {
       const isBlocked = !!blocked[id];
-      const label = id + (id === myId ? ' (this device)' : '');
-      const last = devices[id].lastSeen || devices[id].firstSeen;
+      const dev = devices[id];
+      const displayName = dev.name ? dev.name : (id === myId ? 'This device' : 'Unnamed device');
+      const last = dev.lastSeen || dev.firstSeen;
       return `<div class="item-row" style="flex-wrap:wrap;">
         <div style="flex:1; min-width:180px;">
-          <div class="item-name" style="font-size:12.5px; word-break:break-all;">${escapeHtml(label)}</div>
-          <div style="font-size:11.5px; color:var(--ink-soft);">Last active: ${timeAgo(last)}</div>
+          <div class="item-name" style="font-size:13.5px;">${escapeHtml(displayName)}${id===myId?' <span style="color:var(--ink-soft); font-weight:400; font-size:11px;">(this device)</span>':''}</div>
+          <div style="font-size:11px; color:var(--ink-soft); word-break:break-all;">${escapeHtml(id)}</div>
+          <div style="font-size:11.5px; color:var(--ink-soft);">Last active: ${timeAgo(last)} · First seen: ${dev.firstSeen ? new Date(dev.firstSeen).toLocaleDateString() : '—'}</div>
         </div>
-        <div style="display:flex; gap:6px; align-items:center; flex-shrink:0;">
+        <div style="display:flex; gap:6px; align-items:center; flex-shrink:0; flex-wrap:wrap;">
           <button type="button" class="pill ${isBlocked?'khatam':'available'}" data-device-id="${escapeHtml(id)}" data-action="toggle-block">
             ${isBlocked ? '⛔ Blocked' : '✅ Allowed'}
           </button>
-          <button type="button" class="pill" data-device-id="${escapeHtml(id)}" data-action="remove-device" aria-label="Remove device" title="Remove device" style="min-width:32px; width:32px; height:32px; padding:0; border-radius:9px; background:#fde7e5; color:#b33a32; border:1px solid #f3c4c0; font-size:15px; line-height:1;">🗑️</button>
+          <button type="button" data-device-id="${escapeHtml(id)}" data-action="rename-device" aria-label="Rename device" title="Rename device" style="min-width:32px; width:32px; height:32px; padding:0; border-radius:9px; background:#e7effa; color:#2b5da8; border:1px solid #c7d9f3; font-size:14px; line-height:1;">✏️</button>
+          <button type="button" data-device-id="${escapeHtml(id)}" data-action="remove-device" aria-label="Remove device" title="Remove device" style="min-width:32px; width:32px; height:32px; padding:0; border-radius:9px; background:#fde7e5; color:#b33a32; border:1px solid #f3c4c0; font-size:15px; line-height:1;">🗑️</button>
         </div>
       </div>`;
     }).join('');
@@ -1082,17 +1145,62 @@ function renderAdminList(){
 
   const logEl = document.getElementById('adminActivityLog');
   if(logEl){
-    const log = [...(data.activityLog||[])].sort((a,b)=>b.ts-a.ts).slice(0,20);
+    const all = [...(data.activityLog||[])].sort((a,b)=>b.ts-a.ts);
+    const log = adminShowAllActivity ? all : all.slice(0,8);
     logEl.innerHTML = log.length ? log.map(entry => `
       <div class="expense-row">
         <div>
           <div class="expense-who" style="font-size:13px;">${escapeHtml(entry.action)}</div>
-          <div class="expense-what" style="font-size:11px; word-break:break-all;">${entry.device===myId?'This device':escapeHtml(entry.device)} · ${timeAgo(entry.ts)}</div>
+          <div class="expense-what" style="font-size:11px; word-break:break-all;">${entry.device===myId?'This device':escapeHtml((devices[entry.device]&&devices[entry.device].name)||entry.device)} · ${timeAgo(entry.ts)}</div>
         </div>
       </div>
     `).join('') : '<div class="empty">No activity yet</div>';
+    const viewAllBtn = document.getElementById('adminActivityViewAllBtn');
+    if(viewAllBtn) viewAllBtn.textContent = adminShowAllActivity ? 'Show less' : 'View all';
   }
 }
+
+document.getElementById('adminSearch').addEventListener('input', e=>{
+  adminSearchQuery = e.target.value.trim();
+  renderAdminList();
+});
+document.getElementById('adminActivityViewAllBtn').addEventListener('click', ()=>{
+  adminShowAllActivity = !adminShowAllActivity;
+  renderAdminList();
+});
+document.getElementById('adminDeviceLimitSave').addEventListener('click', async ()=>{
+  const val = document.getElementById('adminDeviceLimit').value;
+  const num = val === '' ? null : Math.max(0, Math.floor(Number(val)));
+  await withLatest(d => { d.deviceLimit = num; }, 'Set device limit: '+(num===null?'none':num));
+});
+document.getElementById('adminRemoveInactiveBtn').addEventListener('click', async ()=>{
+  if(busy) return;
+  const now = Date.now();
+  const devices = data.devices || {};
+  const staleIds = Object.keys(devices).filter(id=>{
+    const last = devices[id].lastSeen || devices[id].firstSeen || 0;
+    return (now - last) > INACTIVE_DAYS*24*60*60*1000;
+  });
+  if(!staleIds.length) return;
+  busy = true;
+  setSyncStatus(T().syncing);
+  try{
+    for(const id of staleIds){
+      await fetch(DB_URL.replace(/\.json$/, '') + '/devices/' + encodeURIComponent(id) + '.json', { method:'DELETE', cache:'no-store' });
+      await fetch(DB_URL.replace(/\.json$/, '') + '/blockedDevices/' + encodeURIComponent(id) + '.json', { method:'DELETE', cache:'no-store' });
+    }
+    data = await fetchRemote();
+    dirty = false;
+    setSyncStatus(T().synced);
+    renderAll();
+  }catch(err){
+    setSyncStatus('⚠️ Cleanup failed — try again');
+    try{ data = await fetchRemote(); renderAll(); }catch(_){}
+  }finally{
+    busy = false;
+  }
+});
+
 document.getElementById('adminDeviceList').addEventListener('click', async e=>{
   const btn = e.target.closest('button[data-action]');
   if(!btn) return;
@@ -1106,6 +1214,14 @@ document.getElementById('adminDeviceList').addEventListener('click', async e=>{
       if(d.blockedDevices[id]) delete d.blockedDevices[id];
       else d.blockedDevices[id] = true;
     }, (willBlock?'Blocked device: ':'Unblocked device: ')+id);
+    return;
+  }
+
+  if(btn.dataset.action === 'rename-device'){
+    const current = (data.devices[id] && data.devices[id].name) || '';
+    openTextModal('Device name', current, async (newName)=>{
+      await withLatest(d => { if(d.devices && d.devices[id]) d.devices[id].name = newName; }, 'Renamed device: '+id+' → '+newName);
+    });
     return;
   }
 
