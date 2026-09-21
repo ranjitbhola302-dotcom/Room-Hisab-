@@ -379,6 +379,15 @@
   </div>
 </div>
 
+<div id="offlineScreen" style="display:none; position:fixed; inset:0; z-index:997; background:var(--bg); align-items:center; justify-content:center; text-align:center; padding:30px;">
+  <div>
+    <div style="font-size:52px; margin-bottom:14px;">📡</div>
+    <div style="font-weight:700; font-size:19px; margin-bottom:6px;">No internet connection</div>
+    <div style="font-size:13px; color:var(--ink-soft); margin-bottom:18px;">कृपया अपना internet चालू करें</div>
+    <button class="btn" id="offlineRetryBtn">🔄 Retry</button>
+  </div>
+</div>
+
 <div id="adminPasswordModal" style="display:none; position:fixed; inset:0; z-index:998; background:rgba(46,36,26,0.55); align-items:center; justify-content:center; padding:24px;">
   <div class="card" style="width:100%; max-width:340px;">
     <div class="section-title">🔒 Admin password</div>
@@ -1003,6 +1012,26 @@ function escapeHtml(str){
   d.textContent = str;
   return d.innerHTML;
 }
+
+function updateOfflineScreen(){
+  const screen = document.getElementById('offlineScreen');
+  if(!screen) return;
+  if(navigator.onLine === false){
+    screen.style.display = 'flex';
+  } else {
+    screen.style.display = 'none';
+  }
+}
+window.addEventListener('offline', updateOfflineScreen);
+window.addEventListener('online', ()=>{
+  updateOfflineScreen();
+  loadAndRender();
+});
+document.getElementById('offlineRetryBtn').addEventListener('click', ()=>{
+  updateOfflineScreen();
+  loadAndRender();
+});
+updateOfflineScreen();
 
 applyLanguage();
 setupMonthFilters();
