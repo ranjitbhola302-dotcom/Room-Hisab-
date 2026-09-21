@@ -359,10 +359,6 @@
         <button class="btn" id="adminDeviceLimitSave" style="padding:6px 12px; font-size:12px;">Save</button>
       </div>
       <div id="adminDeviceList"></div>
-      <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--line); display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
-        <div style="font-size:12px; color:var(--ink-soft); max-width:220px;">Remove every device inactive for 30+ days</div>
-        <button class="btn" id="adminRemoveInactiveBtn" style="background:var(--spice);">🗑️ Remove inactive</button>
-      </div>
     </div>
     <div class="card">
       <div class="section-title" style="display:flex; justify-content:space-between; align-items:center;">
@@ -391,6 +387,17 @@
     <div style="display:flex; gap:8px;">
       <button class="btn" id="adminPasswordOkBtn" style="flex:1;">Unlock</button>
       <button class="muted-link" id="adminPasswordCancelBtn">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="textModal" style="display:none; position:fixed; inset:0; z-index:998; background:rgba(46,36,26,0.55); align-items:center; justify-content:center; padding:24px;">
+  <div class="card" style="width:100%; max-width:340px;">
+    <div class="section-title" id="textModalTitle">Enter name</div>
+    <input type="text" id="textModalInput" style="margin-bottom:10px;">
+    <div style="display:flex; gap:8px;">
+      <button class="btn" id="textModalOkBtn" style="flex:1;">Save</button>
+      <button class="muted-link" id="textModalCancelBtn">Cancel</button>
     </div>
   </div>
 </div>
@@ -1041,6 +1048,26 @@ document.getElementById('adminPasswordOkBtn').addEventListener('click', ()=>{
   }
 });
 
+let textModalCallback = null;
+function openTextModal(title, currentValue, onSave){
+  document.getElementById('textModalTitle').textContent = title;
+  document.getElementById('textModalInput').value = currentValue || '';
+  document.getElementById('textModal').style.display = 'flex';
+  textModalCallback = onSave;
+  setTimeout(()=>{ document.getElementById('textModalInput').focus(); }, 50);
+}
+document.getElementById('textModalCancelBtn').addEventListener('click', ()=>{
+  document.getElementById('textModal').style.display = 'none';
+  textModalCallback = null;
+});
+document.getElementById('textModalOkBtn').addEventListener('click', ()=>{
+  const val = document.getElementById('textModalInput').value.trim();
+  const cb = textModalCallback;
+  document.getElementById('textModal').style.display = 'none';
+  textModalCallback = null;
+  if(cb) cb(val);
+});
+
 let brandTapCount = 0;
 let brandTapTimer = null;
 document.getElementById('brandTapZone').addEventListener('click', ()=>{
@@ -1172,33 +1199,6 @@ document.getElementById('adminDeviceLimitSave').addEventListener('click', async 
   const val = document.getElementById('adminDeviceLimit').value;
   const num = val === '' ? null : Math.max(0, Math.floor(Number(val)));
   await withLatest(d => { d.deviceLimit = num; }, 'Set device limit: '+(num===null?'none':num));
-});
-document.getElementById('adminRemoveInactiveBtn').addEventListener('click', async ()=>{
-  if(busy) return;
-  const now = Date.now();
-  const devices = data.devices || {};
-  const staleIds = Object.keys(devices).filter(id=>{
-    const last = devices[id].lastSeen || devices[id].firstSeen || 0;
-    return (now - last) > INACTIVE_DAYS*24*60*60*1000;
-  });
-  if(!staleIds.length) return;
-  busy = true;
-  setSyncStatus(T().syncing);
-  try{
-    for(const id of staleIds){
-      await fetch(DB_URL.replace(/\.json$/, '') + '/devices/' + encodeURIComponent(id) + '.json', { method:'DELETE', cache:'no-store' });
-      await fetch(DB_URL.replace(/\.json$/, '') + '/blockedDevices/' + encodeURIComponent(id) + '.json', { method:'DELETE', cache:'no-store' });
-    }
-    data = await fetchRemote();
-    dirty = false;
-    setSyncStatus(T().synced);
-    renderAll();
-  }catch(err){
-    setSyncStatus('⚠️ Cleanup failed — try again');
-    try{ data = await fetchRemote(); renderAll(); }catch(_){}
-  }finally{
-    busy = false;
-  }
 });
 
 document.getElementById('adminDeviceList').addEventListener('click', async e=>{
